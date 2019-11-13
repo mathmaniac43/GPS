@@ -1,72 +1,333 @@
-#include "GPSConfig.h"
 #include "GPS.h"
-#include "usart.h"
+
+#include <math.h>
+#include <regex.h>
 #include <string.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 
-GPS_t GPS;
-//##################################################################################################################
-double convertDegMinToDecDeg (float degMin)
+#include "main.h"
+#include "usart.h"
+
+// @formatter:off
+const char* GPS_GPGGA_REGEX_STRING =
+    "\\$GPGGA,"                             //     GPS position indicator
+        "([[:digit:]]*)\\.?"                //  1) Time hours, minutes, and seconds (combined)
+        "([[:digit:]]*),"                   //  2) Time microseconds
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  3) Latitude (DDMM.MMMMM)
+        "([NS]?),"                          //  4) Latitude N/S
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  5) Longitude (DDDMM.MMMMM)
+        "([EW]?),"                          //  6) Longitude E/W
+        "([[:digit:]]?),"                   //  7) Quality indicator
+        "([[:digit:]]{2}),"                 //  8) Number of satellites used
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  9) Horizontal dilution of precision (HDOP)
+        "(-?[[:digit:]]*\\.?[[:digit:]]*)," // 10) Antenna altitude
+        "([MF]?),"                          // 11) Antenna altitude units (M/F)
+        "(-?[[:digit:]]*\\.?[[:digit:]]*)," // 12) Geoidal separation
+        "([MF]?),"                          // 13) Geoidal separation units (M/F)
+        "([[:digit:]]*\\.?[[:digit:]]*),"   // 14) Age of correction
+        "([[:digit:]]*)"                    // 15) Correction station ID
+        "\\*([[:alnum:]]{2})"               // 16) Checksum
+;
+// @formatter:on
+
+// @formatter:off
+const char* GPS_GPVTG_REGEX_STRING =
+    "\\$GPVTG,"                             //     GPS course and ground speed
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  1) Course over ground (degrees true)
+        "(T?),"                             //  2) Degrees true
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  3) Course over ground (degrees magnetic)
+        "(M?),"                             //  4) Degrees magnetic
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  5) Speed over ground (knots)
+        "(N?),"                             //  6) Speed knots
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  7) Speed over ground (kph)
+        "(K?),"                             //  8) Speed kilometers per hour
+        "([NADE]?)"                         //  9) Mode (not valid, autonomous, differential, estimated/dead reckoning)
+        "\\*([[:alnum:]]{2})"               // 10) Checksum
+;
+// @formatter:on
+
+double convertDegMinToDecDeg(float degMin)
 {
-  double min = 0.0;
-  double decDeg = 0.0;
- 
-  //get the minutes, fmod() requires double
-  min = fmod((double)degMin, 100.0);
- 
-  //rebuild coordinates in decimal degrees
-  degMin = (int) ( degMin / 100 );
-  decDeg = degMin + ( min / 60 );
- 
-  return decDeg;
+    double min = 0.0;
+    double decDeg = 0.0;
+
+    //get the minutes, fmod() requires double
+    min = fmod((double) degMin, 100.0);
+
+    //rebuild coordinates in decimal degrees
+    degMin = (int) (degMin / 100);
+    decDeg = degMin + (min / 60);
+
+    return decDeg;
 }
-//##################################################################################################################
-void	GPS_Init(void)
+
+void GPS_Init(GPS_t* gps, UART_HandleTypeDef* uart)
 {
-	GPS.rxIndex=0;
-	HAL_UART_Receive_IT(&_GPS_USART,&GPS.rxTmp,1);	
+    memset(gps, 0, sizeof(GPS_t));
+
+    regcomp(&(gps->regex_gpgga), GPS_GPGGA_REGEX_STRING, REG_EXTENDED);
+    regcomp(&(gps->regex_gpvtg), GPS_GPVTG_REGEX_STRING, REG_EXTENDED);
+
+    HAL_UART_Receive_IT(uart, &(gps->buffer.char_interrupt), 1);
 }
-//##################################################################################################################
-void	GPS_CallBack(void)
+
+void GPS_CallBack(GPS_t* gps, UART_HandleTypeDef* uart)
 {
-	GPS.LastTime=HAL_GetTick();
-	if(GPS.rxIndex < sizeof(GPS.rxBuffer)-2)
-	{
-		GPS.rxBuffer[GPS.rxIndex] = GPS.rxTmp;
-		GPS.rxIndex++;
-	}	
-	HAL_UART_Receive_IT(&_GPS_USART,&GPS.rxTmp,1);
+    // The most recent character has been stored in
+    // gps->buffer.char_interrupt; handle it and set
+    // up to capture the next one.
+
+#if (1 == GPS_DEBUG_PRINT_ENABLED)
+    GPS_DEBUG_PRINT(&(gps->buffer.char_interrupt), 1);
+#endif
+
+    gps->buffer.updated_ms = HAL_GetTick();
+    if (gps->buffer.char_interrupt != '\0' && gps->buffer.next_index < GPS_BUFFER_SIZE - 1)
+    {
+        gps->buffer.chars[gps->buffer.next_index] = gps->buffer.char_interrupt;
+        ++gps->buffer.next_index;
+    }
+
+    // Listen for the next character
+    HAL_UART_Receive_IT(uart, &(gps->buffer.char_interrupt), 1);
 }
-//##################################################################################################################
-void	GPS_Process(void)
+
+void GPS_Process(GPS_t* gps, UART_HandleTypeDef* uart)
 {
-	if( (HAL_GetTick()-GPS.LastTime>50) && (GPS.rxIndex>0))
-	{
-		char	*str;
-		#if (_GPS_DEBUG==1)
-		printf("%s",GPS.rxBuffer);
-		#endif
-		str=strstr((char*)GPS.rxBuffer,"$GPGGA,");
-		if(str!=NULL)
-		{
-			memset(&GPS.GPGGA,0,sizeof(GPS.GPGGA));
-			sscanf(str,"$GPGGA,%2hhd%2hhd%2hhd.%3hd,%f,%c,%f,%c,%hhd,%hhd,%f,%f,%c,%hd,%s,*%2s\r\n",&GPS.GPGGA.UTC_Hour,&GPS.GPGGA.UTC_Min,&GPS.GPGGA.UTC_Sec,&GPS.GPGGA.UTC_MicroSec,&GPS.GPGGA.Latitude,&GPS.GPGGA.NS_Indicator,&GPS.GPGGA.Longitude,&GPS.GPGGA.EW_Indicator,&GPS.GPGGA.PositionFixIndicator,&GPS.GPGGA.SatellitesUsed,&GPS.GPGGA.HDOP,&GPS.GPGGA.MSL_Altitude,&GPS.GPGGA.MSL_Units,&GPS.GPGGA.AgeofDiffCorr,GPS.GPGGA.DiffRefStationID,GPS.GPGGA.CheckSum);
-			if(GPS.GPGGA.NS_Indicator==0)
-				GPS.GPGGA.NS_Indicator='-';
-			if(GPS.GPGGA.EW_Indicator==0)
-				GPS.GPGGA.EW_Indicator='-';
-			if(GPS.GPGGA.Geoid_Units==0)
-				GPS.GPGGA.Geoid_Units='-';
-			if(GPS.GPGGA.MSL_Units==0)
-				GPS.GPGGA.MSL_Units='-';
-			GPS.GPGGA.LatitudeDecimal=convertDegMinToDecDeg(GPS.GPGGA.Latitude);
-			GPS.GPGGA.LongitudeDecimal=convertDegMinToDecDeg(GPS.GPGGA.Longitude);			
-		}		
-		memset(GPS.rxBuffer,0,sizeof(GPS.rxBuffer));
-		GPS.rxIndex=0;
-	}
-	HAL_UART_Receive_IT(&_GPS_USART,&GPS.rxTmp,1);
+    uint32_t current_ms = HAL_GetTick();
+    uint8_t must_clear_buffer = (gps->buffer.next_index >= GPS_BUFFER_SIZE - 1);
+
+    if (current_ms > (gps->buffer.updated_ms + GPS_MS_BEFORE_CHECK) &&
+        gps->buffer.next_index > 0)
+    { // It has been long enough since an update, and there is data available
+        int gpgga_result = GPS_Process_GPGGA(gps, current_ms);
+        int gpvtg_result = GPS_Process_GPVTG(gps, current_ms);
+
+        if (0 == gpgga_result && 0 == gpvtg_result)
+        {
+            must_clear_buffer = 1;
+        }
+    }
+
+    if (must_clear_buffer)
+    {
+        memset(&(gps->buffer.chars), 0, GPS_BUFFER_SIZE);
+        gps->buffer.next_index = 0;
+        gps->buffer.updated_ms = current_ms;
+    }
+
+    // Ensure that the interrupt is listening for the next character.
+    HAL_UART_Receive_IT(uart, &(gps->buffer.char_interrupt), 1);
 }
-//##################################################################################################################
+
+int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms)
+{
+    char* string = (char*)(gps->buffer.chars);
+    int result = regexec(
+        &(gps->regex_gpgga),
+        string,
+        GPS_GPGGA_NUM_FIELDS,
+        gps->regmatch_gpgga,
+        0
+    );
+
+    if (0 == result)
+    { // All captures successful, can parse
+        GPGGA_t* gpgga = &(gps->gpgga);
+        regmatch_t* matches = gps->regmatch_gpgga;
+        gpgga->updated_ms = current_ms;
+
+        size_t index = 1; // index 0 is the entire string!
+        char* substring = (char*)&(string[matches[index].rm_so]);
+        char* end = NULL;
+
+        //  1) Time hours, minutes, and seconds (combined)
+        uint32_t hours_minutes_seconds = atoll(substring);
+        gpgga->utc_h = (hours_minutes_seconds / 10000) % 100;
+        gpgga->utc_m = (hours_minutes_seconds /   100) % 100;
+        gpgga->utc_s = (hours_minutes_seconds /     1) % 100;
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  2) Time microseconds
+        gpgga->utc_us = atol(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  3) Latitude (DDMM.MMMMM)
+        gpgga->lat = convertDegMinToDecDeg(atoff(substring));
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  4) Latitude N/S
+        if ('N' == *substring || 'S' == *substring)
+        {
+            gpgga->lat_dir = *substring;
+        }
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  5) Longitude (DDDMM.MMMMM)
+        gpgga->lon = convertDegMinToDecDeg(atoff(substring));
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  6) Longitude E/W
+        if ('E' == *substring || 'W' == *substring)
+        {
+            gpgga->lon_dir = *substring;
+        }
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  7) Quality indicator
+        gpgga->quality = atol(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  8) Number of satellites used
+        gpgga->num_sats = atol(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  9) Horizontal dilution of precision (HDOP)
+        gpgga->hdop = atoff(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        // 10) Antenna altitude
+        gpgga->alt = atoff(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        // 11) Antenna altitude units (M/F)
+        if ('M' == *substring || 'F' == *substring)
+        {
+            gpgga->alt_unit = *substring;
+        }
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        // 12) Geoidal separation
+        gpgga->geo = atoff(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        // 13) Geoidal separation units (M/F)
+        if ('M' == *substring || 'F' == *substring)
+        {
+            gpgga->geo_unit = *substring;
+        }
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        // 14) Age of correction
+        gpgga->aoc = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        // 15) Correction station ID
+        end = (char*)&(string[matches[index].rm_eo]);
+        memcpy(gpgga->station, substring, (end - substring));
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        // 16) Checksum
+        end = (char*)&(string[matches[index].rm_eo]);
+        memcpy(gpgga->check, substring, (end - substring));
+        //++index;
+        //substring = (char*)&(string[matches[index].rm_so]);
+    }
+
+    return result;
+}
+
+int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms)
+{
+    char* string = (char*)(gps->buffer.chars);
+    int result = regexec(
+        &(gps->regex_gpvtg),
+        string,
+        GPS_GPVTG_NUM_FIELDS,
+        gps->regmatch_gpvtg,
+        0
+    );
+
+    if (0 == result)
+    { // All captures successful, can parse
+        GPVTG_t* gpvtg = &(gps->gpvtg);
+        regmatch_t* matches = gps->regmatch_gpvtg;
+        gpvtg->updated_ms = current_ms;
+
+        size_t index = 1; // index 0 is the entire string!
+        char* substring = (char*)&(string[matches[index].rm_so]);
+        char* end = NULL;
+
+        //  1) Course over ground (degrees true)
+        gpvtg->course_t = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  2) Degrees true
+        if ('T' == *substring)
+        {
+            gpvtg->course_t_c = *substring;
+        }
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  3) Course over ground (degrees magnetic)
+        gpvtg->course_m = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  4) Degrees magnetic
+        if ('M' == *substring)
+        {
+            gpvtg->course_m_c = *substring;
+        }
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  5) Speed over ground (knots)
+        gpvtg->speed_kt = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  6) Speed knots
+        if ('N' == *substring)
+        {
+            gpvtg->speed_kt_c = *substring;
+        }
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  7) Speed over ground (kph)
+        gpvtg->speed_km = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  8) Speed kilometers per hour
+        if ('K' == *substring)
+        {
+            gpvtg->speed_km_c = *substring;
+        }
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  9) Mode (not valid, autonomous, differential, estimated/dead reckoning)
+        gpvtg->mode = *substring;
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        // 10) Checksum
+        end = (char*)&(string[matches[index].rm_eo]);
+        memcpy(gpvtg->check, substring, (end - substring));
+        //++index;
+        //substring = (char*)&(string[matches[index].rm_so]);
+    }
+
+    return result;
+}
