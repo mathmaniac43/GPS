@@ -10,6 +10,8 @@
 #include "main.h"
 #include "usart.h"
 
+
+
 #if GPS_GPGGA_ENABLED
 // @formatter:off
 const char* GPS_GPGGA_REGEX_STRING =
@@ -32,7 +34,29 @@ const char* GPS_GPGGA_REGEX_STRING =
         "\\*([[:alnum:]]{2})"               // 16) Checksum
 ;
 // @formatter:on
-#endif // GPS_GGA_ENABLED
+#endif // GPS_GPGGA_ENABLED
+
+#if GPS_GPRMC_ENABLED
+// @formatter:off
+const char* GPS_GPRMC_REGEX_STRING =
+    "\\$GPRMC,"                             //     GPS recommended minimum data
+        "([[:digit:]]*)\\.?"                //  1) Time hours, minutes, and seconds (combined)
+        "([[:digit:]]*),"                   //  2) Time fractional seconds
+        "([AV]?),"                          //  3) Warning A/V
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  4) Latitude (DDMM.MMMMM)
+        "([NS]?),"                          //  5) Latitude N/S
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  6) Longitude (DDDMM.MMMMM)
+        "([EW]?),"                          //  7) Longitude E/W
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  8) Speed over ground (knots)
+        "([[:digit:]]*\\.?[[:digit:]]*),"   //  9) Course over ground (degrees true)
+        "([[:digit:]]*),"                   // 10) Time day, month, year (combined)
+        "([[:digit:]]*\\.?[[:digit:]]*),"   // 11) Magnetic variation degrees
+        "([EW]?),"                          // 12) Magnetic variation E/W
+        "([NADE]?)"                         // 13) Mode (not valid, autonomous, differential, estimated/dead reckoning)
+        "\\*([[:alnum:]]{2})"               // 14) Checksum
+;
+// @formatter:on
+#endif // GPS_GPRMC_ENABLED
 
 #if GPS_GPVTG_ENABLED
 // @formatter:off
@@ -89,7 +113,11 @@ void GPS_Init(GPS_t* gps, UART_HandleTypeDef* uart)
 
 #if GPS_GPGGA_ENABLED
     regcomp(&(gps->regex_gpgga), GPS_GPGGA_REGEX_STRING, REG_EXTENDED);
-#endif // GPS_GGA_ENABLED
+#endif // GPS_GPGGA_ENABLED
+
+#if GPS_GPRMC_ENABLED
+    regcomp(&(gps->regex_gprmc), GPS_GPRMC_REGEX_STRING, REG_EXTENDED);
+#endif // GPS_GPRMC_ENABLED
 
 #if GPS_GPVTG_ENABLED
     regcomp(&(gps->regex_gpvtg), GPS_GPVTG_REGEX_STRING, REG_EXTENDED);
@@ -135,7 +163,11 @@ void GPS_Process(GPS_t* gps, UART_HandleTypeDef* uart)
 
 #if GPS_GPGGA_ENABLED
         result_bool = GPS_Process_GPGGA(gps, current_ms) || result_bool;
-#endif // GPS_GGA_ENABLED
+#endif // GPS_GPGGA_ENABLED
+
+#if GPS_GPRMC_ENABLED
+        result_bool = GPS_Process_GPRMC(gps, current_ms) || result_bool;
+#endif // GPS_GPRMC_ENABLED
 
 #if GPS_GPVTG_ENABLED
         result_bool = GPS_Process_GPVTG(gps, current_ms) || result_bool;
@@ -180,111 +212,201 @@ int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms)
         regmatch_t* matches = gps->regmatch_gpgga;
         gpgga->updated_ms = current_ms;
 
-        size_t index = 1; // index 0 is the entire string!
-        char* substring = (char*)&(string[matches[index].rm_so]);
+        size_t index = 0; // index 0 is the entire string!
+        char* substring = NULL;
         char* end = NULL;
 
         //  1) Time hours, minutes, and seconds (combined)
+        substring = (char*)&(string[matches[++index].rm_so]);
         uint32_t hours_minutes_seconds = atoll(substring);
         gpgga->utc_h = (hours_minutes_seconds / 10000) % 100;
         gpgga->utc_m = (hours_minutes_seconds /   100) % 100;
         gpgga->utc_s = (hours_minutes_seconds /     1) % 100;
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  2) Time microseconds
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpgga->utc_us = atol(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  3) Latitude (DDMM.MMMMM)
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpgga->lat = convertDegMinToDecDeg(atoff(substring));
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  4) Latitude N/S
+        substring = (char*)&(string[matches[++index].rm_so]);
         if ('N' == *substring || 'S' == *substring)
         {
             gpgga->lat_dir = *substring;
         }
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  5) Longitude (DDDMM.MMMMM)
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpgga->lon = convertDegMinToDecDeg(atoff(substring));
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  6) Longitude E/W
+        substring = (char*)&(string[matches[++index].rm_so]);
         if ('E' == *substring || 'W' == *substring)
         {
             gpgga->lon_dir = *substring;
         }
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  7) Quality indicator
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpgga->quality = atol(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  8) Number of satellites used
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpgga->num_sats = atol(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  9) Horizontal dilution of precision (HDOP)
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpgga->hdop = atoff(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         // 10) Antenna altitude
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpgga->alt = atoff(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         // 11) Antenna altitude units (M/F)
+        substring = (char*)&(string[matches[++index].rm_so]);
         if ('M' == *substring || 'F' == *substring)
         {
             gpgga->alt_unit = *substring;
         }
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         // 12) Geoidal separation
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpgga->geo = atoff(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         // 13) Geoidal separation units (M/F)
+        substring = (char*)&(string[matches[++index].rm_so]);
         if ('M' == *substring || 'F' == *substring)
         {
             gpgga->geo_unit = *substring;
         }
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         // 14) Age of correction
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpgga->aoc = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         // 15) Correction station ID
+        substring = (char*)&(string[matches[++index].rm_so]);
         end = (char*)&(string[matches[index].rm_eo]);
         memcpy(gpgga->station, substring, (end - substring));
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         // 16) Checksum
+        substring = (char*)&(string[matches[++index].rm_so]);
         end = (char*)&(string[matches[index].rm_eo]);
         memcpy(gpgga->check, substring, (end - substring));
-        //++index;
-        //substring = (char*)&(string[matches[index].rm_so]);
     }
 
     return result;
 }
-#endif // GPS_GGA_ENABLED
+#endif // GPS_GPGGA_ENABLED
+
+#if GPS_GPRMC_ENABLED
+int GPS_Process_GPRMC(GPS_t* gps, uint32_t current_ms)
+{
+    char* string = (char*)(gps->buffer.chars);
+    int result = regexec(
+        &(gps->regex_gprmc),
+        string,
+        GPS_GPRMC_NUM_FIELDS,
+        gps->regmatch_gprmc,
+        0
+    );
+
+    if (0 == result)
+    { // All captures successful, can parse
+        GPRMC_t* gprmc = &(gps->gprmc);
+        regmatch_t* matches = gps->regmatch_gprmc;
+        gprmc->updated_ms = current_ms;
+
+        size_t index = 0; // index 0 is the entire string!
+        char* substring = NULL;
+        char* end = NULL;
+
+        //  1) Time hours, minutes, and seconds (combined)
+        substring = (char*)&(string[matches[++index].rm_so]);
+        uint32_t hours_minutes_seconds = atoll(substring);
+        gprmc->utc_h = (hours_minutes_seconds / 10000) % 100;
+        gprmc->utc_m = (hours_minutes_seconds /   100) % 100;
+        gprmc->utc_s = (hours_minutes_seconds /     1) % 100;
+
+        //  2) Time fractional seconds
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->speed_kt = atoi(substring);
+
+        //  3) Warning A/V
+        substring = (char*)&(string[matches[++index].rm_so]);
+        if ('A' == *substring || 'V' == *substring)
+        {
+            gprmc->nav_warn = *substring;
+        }
+
+        //  4) Latitude (DDMM.MMMMM)
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->lat = convertDegMinToDecDeg(atoff(substring));
+
+        //  5) Latitude N/S
+        substring = (char*)&(string[matches[++index].rm_so]);
+        if ('N' == *substring || 'S' == *substring)
+        {
+            gprmc->lat_dir = *substring;
+        }
+
+        //  6) Longitude (DDDMM.MMMMM)
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->lon = convertDegMinToDecDeg(atoff(substring));
+
+        //  7) Longitude E/W
+        substring = (char*)&(string[matches[++index].rm_so]);
+        if ('E' == *substring || 'W' == *substring)
+        {
+            gprmc->lon_dir = *substring;
+        }
+
+        //  8) Speed over ground (knots)
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->speed_kt = atoff(substring);
+
+        //  9) Course over ground (degrees true)
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->course_t = atoff(substring);
+
+        // 10) Time day, month, year (combined)
+        substring = (char*)&(string[matches[++index].rm_so]);
+        uint32_t day_mon_year = atoll(substring);
+        gprmc->utc_day  = (day_mon_year / 10000) % 100;
+        gprmc->utc_mon  = (day_mon_year /   100) % 100;
+        gprmc->utc_year = (day_mon_year /     1) % 100;
+
+        // 11) Magnetic variation degrees
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->var = atoff(substring);
+
+        // 12) Magnetic variation E/W
+        substring = (char*)&(string[matches[++index].rm_so]);
+        if ('E' == *substring || 'W' == *substring)
+        {
+            gprmc->var_c = *substring;
+        }
+
+        // 13) Mode (not valid, autonomous, differential, estimated/dead reckoning)
+        substring = (char*)&(string[matches[++index].rm_so]);
+        if ('N' == *substring || 'A' == *substring ||
+            'D' == *substring || 'E' == *substring)
+        {
+            gprmc->mode = *substring;
+        }
+
+        // 14) Checksum
+        substring = (char*)&(string[matches[++index].rm_so]);
+        end = (char*)&(string[matches[index].rm_eo]);
+        memcpy(gprmc->check, substring, (end - substring));
+    }
+
+    return result;
+}
+#endif // GPS_GPRMC_ENABLED
 
 #if GPS_GPVTG_ENABLED
 int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms)
@@ -304,72 +426,62 @@ int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms)
         regmatch_t* matches = gps->regmatch_gpvtg;
         gpvtg->updated_ms = current_ms;
 
-        size_t index = 1; // index 0 is the entire string!
-        char* substring = (char*)&(string[matches[index].rm_so]);
+        size_t index = 0; // index 0 is the entire string!
+        char* substring = NULL;
         char* end = NULL;
 
         //  1) Course over ground (degrees true)
-        gpvtg->course_t = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gpvtg->course_t = atoff(substring);
 
         //  2) Degrees true
+        substring = (char*)&(string[matches[++index].rm_so]);
         if ('T' == *substring)
         {
             gpvtg->course_t_c = *substring;
         }
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  3) Course over ground (degrees magnetic)
-        gpvtg->course_m = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gpvtg->course_m = atoff(substring);
 
         //  4) Degrees magnetic
+        substring = (char*)&(string[matches[++index].rm_so]);
         if ('M' == *substring)
         {
             gpvtg->course_m_c = *substring;
         }
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  5) Speed over ground (knots)
-        gpvtg->speed_kt = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gpvtg->speed_kt = atoff(substring);
 
         //  6) Speed knots
+        substring = (char*)&(string[matches[++index].rm_so]);
         if ('N' == *substring)
         {
             gpvtg->speed_kt_c = *substring;
         }
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  7) Speed over ground (kph)
-        gpvtg->speed_km = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
+        substring = (char*)&(string[matches[++index].rm_so]);
+        gpvtg->speed_km = atoff(substring);
 
         //  8) Speed kilometers per hour
+        substring = (char*)&(string[matches[++index].rm_so]);
         if ('K' == *substring)
         {
             gpvtg->speed_km_c = *substring;
         }
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  9) Mode (not valid, autonomous, differential, estimated/dead reckoning)
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpvtg->mode = *substring;
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         // 10) Checksum
+        substring = (char*)&(string[matches[++index].rm_so]);
         end = (char*)&(string[matches[index].rm_eo]);
         memcpy(gpvtg->check, substring, (end - substring));
-        //++index;
-        //substring = (char*)&(string[matches[index].rm_so]);
     }
 
     return result;
@@ -383,7 +495,7 @@ int GPS_Process_GPZDA(GPS_t* gps, uint32_t current_ms)
     int result = regexec(
         &(gps->regex_gpzda),
         string,
-        GPS_GPGGA_NUM_FIELDS,
+        GPS_GPZDA_NUM_FIELDS,
         gps->regmatch_gpzda,
         0
     );
@@ -394,53 +506,45 @@ int GPS_Process_GPZDA(GPS_t* gps, uint32_t current_ms)
         regmatch_t* matches = gps->regmatch_gpzda;
         gpzda->updated_ms = current_ms;
 
-        size_t index = 1; // index 0 is the entire string!
-        char* substring = (char*)&(string[matches[index].rm_so]);
+        size_t index = 0; // index 0 is the entire string!
+        char* substring = NULL;
         char* end = NULL;
 
         //  1) Time hours, minutes, and seconds (combined)
+        substring = (char*)&(string[matches[++index].rm_so]);
         uint32_t hours_minutes_seconds = atoll(substring);
         gpzda->utc_h = (hours_minutes_seconds / 10000) % 100;
         gpzda->utc_m = (hours_minutes_seconds /   100) % 100;
         gpzda->utc_s = (hours_minutes_seconds /     1) % 100;
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  2) Time microseconds
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpzda->utc_us = atol(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  3) Time day
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpzda->utc_day = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  4) Time month
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpzda->utc_month = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  5) Time year
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpzda->utc_year = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  6) Time local zone hours
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpzda->utc_local_hours = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  7) Time local zone minutes
+        substring = (char*)&(string[matches[++index].rm_so]);
         gpzda->utc_local_minutes = atoi(substring);
-        ++index;
-        substring = (char*)&(string[matches[index].rm_so]);
 
         //  8) Checksum
+        substring = (char*)&(string[matches[++index].rm_so]);
         end = (char*)&(string[matches[index].rm_eo]);
         memcpy(gpzda->check, substring, (end - substring));
-        //++index;
-        //substring = (char*)&(string[matches[index].rm_so]);
     }
 
     return result;

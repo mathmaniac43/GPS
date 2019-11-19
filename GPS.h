@@ -8,15 +8,19 @@
 #include "usart.h"
 
 #ifndef GPS_GPGGA_ENABLED
-#define GPS_GPGGA_ENABLED 1
+#define GPS_GPGGA_ENABLED 0
+#endif
+
+#ifndef GPS_GPRMC_ENABLED
+#define GPS_GPRMC_ENABLED 1
 #endif
 
 #ifndef GPS_GPVTG_ENABLED
-#define GPS_GPVTG_ENABLED 1
+#define GPS_GPVTG_ENABLED 0
 #endif
 
 #ifndef GPS_GPZDA_ENABLED
-#define GPS_GPZDA_ENABLED 1
+#define GPS_GPZDA_ENABLED 0
 #endif
 
 #ifndef GPS_BUFFER_SIZE
@@ -49,6 +53,7 @@ typedef struct
     uint16_t    next_index;             //! Next input buffer index
 } GPS_Buffer_t;
 
+#if GPS_GPGGA_ENABLED
 /*!
  * @brief Contains GPS GPGGA data.
  *
@@ -59,7 +64,6 @@ typedef struct
  * @see http://navspark.mybigcommerce.com/content/NMEA_Format_v0.1.pdf
  * @see http://lefebure.com/articles/nmea-gga/
  */
-#if GPS_GPGGA_ENABLED
 
 typedef struct
 {
@@ -92,9 +96,57 @@ typedef struct
 } GPGGA_t;
 
 #define GPS_GPGGA_NUM_FIELDS (16+1)
-
 #endif // GPS_GPGGA_ENABLED
 
+#if GPS_GPRMC_ENABLED
+/*!
+ * @brief Contains GPS GPRMC data.
+ *
+ * @details
+ * This is the Global Positioning System recommended minimum data.
+ *
+ * @see https://docs.novatel.com/oem7/Content/Logs/GPRMC.htm
+ * @see http://navspark.mybigcommerce.com/content/NMEA_Format_v0.1.pdf
+ * @see http://lefebure.com/articles/nmea-gga/
+ */
+
+typedef struct
+{
+    uint32_t    updated_ms; //! Last ticks (in ms) that this was updated
+
+    uint8_t     utc_h;      //! UTC hour
+    uint8_t     utc_m;      //! UTC minute
+    uint8_t     utc_s;      //! UTC second
+
+    uint16_t    utc_s_frac; //! UTC fractional seconds
+
+    char        nav_warn;   //! Navigation receiver warning (A=OK, V=warning)
+
+    float       lat;        //! Latitude
+    char        lat_dir;    //! Latitude direction (N/S); null if @a lat invalid
+    float       lon;        //! Longitude
+    char        lon_dir;    //! Longitude direction (E/W); null if @a lon invalid
+
+    float       speed_kt;   //! Speed over ground, knots
+
+    float       course_t;   //! Course over ground, degrees True
+
+    uint8_t     utc_day;    //! UTC day
+    uint8_t     utc_mon;    //! UTC month
+    uint8_t     utc_year;   //! UTC year
+
+    float       var;        //! Magnetic variation (E subtracts from @a course_t)
+    char        var_c;      //! Mag. var. direction (E/W); null if @a var invalid
+
+    char        mode;       //! Mode indicator; null if invalid
+    char        check[2];   //! Checksum for message
+
+} GPRMC_t;
+
+#define GPS_GPRMC_NUM_FIELDS (14+1)
+#endif // GPS_GPRMC_ENABLED
+
+#if GPS_GPVTG_ENABLED
 /*!
  * @brief Contains GPS GPVTG data.
  *
@@ -104,7 +156,6 @@ typedef struct
  * @see https://docs.novatel.com/oem7/Content/Logs/GPVTG.htm
  * @see http://navspark.mybigcommerce.com/content/NMEA_Format_v0.1.pdf
  */
-#if GPS_GPVTG_ENABLED
 
 typedef struct
 {
@@ -128,9 +179,9 @@ typedef struct
 } GPVTG_t;
 
 #define GPS_GPVTG_NUM_FIELDS (10+1)
-
 #endif // GPS_GPVTG_ENABLED
 
+#if GPS_GPZDA_ENABLED
 /*!
  * @brief Contains GPS GPZDA data.
  *
@@ -140,7 +191,6 @@ typedef struct
  * @see https://docs.novatel.com/oem7/Content/Logs/GPZDA.htm
  * @see http://navspark.mybigcommerce.com/content/NMEA_Format_v0.1.pdf
  */
-#if GPS_GPZDA_ENABLED
 
 typedef struct
 {
@@ -162,7 +212,6 @@ typedef struct
 } GPZDA_t;
 
 #define GPS_GPZDA_NUM_FIELDS (8+1)
-
 #endif //GPS_GPZDA_ENABLED
 
 /*!
@@ -170,7 +219,7 @@ typedef struct
  *
  * @details
  * Stores incoming characters streamed from GPS in @a buffer, and the
- * latest converted GPGGA and GPVTG data in the appropriate structures.
+ * latest converted data in the appropriate structures.
  */
 typedef struct
 {
@@ -182,6 +231,12 @@ typedef struct
     GPGGA_t         gpgga;
 #endif // GPS_GPGGA_ENABLED
 
+#if GPS_GPRMC_ENABLED
+    regex_t         regex_gprmc;
+    regmatch_t      regmatch_gprmc[GPS_GPRMC_NUM_FIELDS];
+    GPRMC_t         gprmc;
+#endif // GPS_GPRMC_ENABLED
+
 #if GPS_GPVTG_ENABLED
     regex_t         regex_gpvtg;
     regmatch_t      regmatch_gpvtg[GPS_GPVTG_NUM_FIELDS];
@@ -190,7 +245,7 @@ typedef struct
 
 #if GPS_GPZDA_ENABLED
     regex_t         regex_gpzda;
-    regmatch_t      regmatch_gpzda[GPS_GPVTG_NUM_FIELDS];
+    regmatch_t      regmatch_gpzda[GPS_GPZDA_NUM_FIELDS];
     GPZDA_t         gpzda;
 #endif // GPS_GPZDA_ENABLED
 } GPS_t;
@@ -239,6 +294,7 @@ void GPS_CallBack(  GPS_t* gps, UART_HandleTypeDef* uart);
  */
 void GPS_Process(   GPS_t* gps, UART_HandleTypeDef* uart);
 
+#if GPS_GPGGA_ENABLED
 /*!
  * @brief Process GPGGA data and store in the GPS.
  *
@@ -254,10 +310,29 @@ void GPS_Process(   GPS_t* gps, UART_HandleTypeDef* uart);
  *
  * @retval int result from calling regexec().
  */
-#if GPS_GPGGA_ENABLED
 int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms);
-#endif // GPS_GGA_ENABLED
+#endif // GPS_GPGGA_ENABLED
 
+#if GPS_GPRMC_ENABLED
+/*!
+ * @brief Process GPRMC data and store in the GPS.
+ *
+ * @details
+ * Parses each CSV field per the specification.
+ *
+ * @see GPS_t
+ *
+ * @param gps   Pointer to the GPS_t that provides the captured data and
+ *              will store the converted structs.
+ * @param current_ms    Current "timestamp" from the processer per the ticks,
+ *                      to mark in the data structure when it was last updated.
+ *
+ * @retval int result from calling regexec().
+ */
+int GPS_Process_GPRMC(GPS_t* gps, uint32_t current_ms);
+#endif // GPS_GPRMC_ENABLED
+
+#if GPS_GPVTG_ENABLED
 /*!
  * @brief Process GPVTG data and store in the GPS.
  *
@@ -273,10 +348,10 @@ int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms);
  *
  * @retval int result from calling regexec().
  */
-#if GPS_GPVTG_ENABLED
 int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms);
 #endif // GPS_GPVTG_ENABLED
 
+#if GPS_GPZDA_ENABLED
 /*!
  * @brief Process GPZDA data and store in the GPS.
  *
@@ -292,7 +367,6 @@ int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms);
  *
  * @retval int result from calling regexec().
  */
-#if GPS_GPZDA_ENABLED
 int GPS_Process_GPZDA(GPS_t* gps, uint32_t current_ms);
 #endif // GPS_GPZDA_ENABLED
 
