@@ -10,6 +10,7 @@
 #include "main.h"
 #include "usart.h"
 
+#if GPS_GPGGA_ENABLED
 // @formatter:off
 const char* GPS_GPGGA_REGEX_STRING =
     "\\$GPGGA,"                             //     GPS position indicator
@@ -31,7 +32,9 @@ const char* GPS_GPGGA_REGEX_STRING =
         "\\*([[:alnum:]]{2})"               // 16) Checksum
 ;
 // @formatter:on
+#endif // GPS_GGA_ENABLED
 
+#if GPS_GPVTG_ENABLED
 // @formatter:off
 const char* GPS_GPVTG_REGEX_STRING =
     "\\$GPVTG,"                             //     GPS course and ground speed
@@ -47,7 +50,9 @@ const char* GPS_GPVTG_REGEX_STRING =
         "\\*([[:alnum:]]{2})"               // 10) Checksum
 ;
 // @formatter:on
+#endif // GPS_GPVTG_ENABLED
 
+#if GPS_GPZDA_ENABLED
 // @formatter:off
 const char* GPS_GPZDA_REGEX_STRING =
     "\\$GPZDA,"                             //     GPS time and date indicator
@@ -61,6 +66,7 @@ const char* GPS_GPZDA_REGEX_STRING =
         "\\*([[:alnum:]]{2})"               //  8) Checksum
 ;
 // @formatter:on
+#endif // GPS_GPZDA_ENABLED
 
 double convertDegMinToDecDeg(float degMin)
 {
@@ -81,9 +87,17 @@ void GPS_Init(GPS_t* gps, UART_HandleTypeDef* uart)
 {
     memset(gps, 0, sizeof(GPS_t));
 
+#if GPS_GPGGA_ENABLED
     regcomp(&(gps->regex_gpgga), GPS_GPGGA_REGEX_STRING, REG_EXTENDED);
+#endif // GPS_GGA_ENABLED
+
+#if GPS_GPVTG_ENABLED
     regcomp(&(gps->regex_gpvtg), GPS_GPVTG_REGEX_STRING, REG_EXTENDED);
+#endif // GPS_GPVTG_ENABLED
+
+#if GPS_GPZDA_ENABLED
     regcomp(&(gps->regex_gpzda), GPS_GPZDA_REGEX_STRING, REG_EXTENDED);
+#endif // GPS_GPZDA_ENABLED
 
     HAL_UART_Receive_IT(uart, &(gps->buffer.char_interrupt), 1);
 }
@@ -117,13 +131,21 @@ void GPS_Process(GPS_t* gps, UART_HandleTypeDef* uart)
     if (current_ms > (gps->buffer.updated_ms + GPS_MS_BEFORE_CHECK) &&
         gps->buffer.next_index > 0)
     { // It has been long enough since an update, and there is data available
-        int gpgga_result = GPS_Process_GPGGA(gps, current_ms);
-        int gpvtg_result = GPS_Process_GPVTG(gps, current_ms);
-        int gpzda_result = GPS_Process_GPZDA(gps, current_ms);
+        int result_bool = 0; // nonzero if something failed
 
-        if (0 == gpgga_result &&
-            0 == gpvtg_result &&
-            0 == gpzda_result)
+#if GPS_GPGGA_ENABLED
+        result_bool = GPS_Process_GPGGA(gps, current_ms) || result_bool;
+#endif // GPS_GGA_ENABLED
+
+#if GPS_GPVTG_ENABLED
+        result_bool = GPS_Process_GPVTG(gps, current_ms) || result_bool;
+#endif // GPS_GPVTG_ENABLED
+
+#if GPS_GPZDA_ENABLED
+        result_bool = GPS_Process_GPZDA(gps, current_ms) || result_bool;
+#endif // GPS_GPZDA_ENABLED
+
+        if (0 == result_bool)
         {
             must_clear_buffer = 1;
         }
@@ -140,6 +162,7 @@ void GPS_Process(GPS_t* gps, UART_HandleTypeDef* uart)
     HAL_UART_Receive_IT(uart, &(gps->buffer.char_interrupt), 1);
 }
 
+#if GPS_GPGGA_ENABLED
 int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms)
 {
     char* string = (char*)(gps->buffer.chars);
@@ -261,7 +284,9 @@ int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms)
 
     return result;
 }
+#endif // GPS_GGA_ENABLED
 
+#if GPS_GPVTG_ENABLED
 int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms)
 {
     char* string = (char*)(gps->buffer.chars);
@@ -349,7 +374,9 @@ int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms)
 
     return result;
 }
+#endif // GPS_GPVTG_ENABLED
 
+#if GPS_GPZDA_ENABLED
 int GPS_Process_GPZDA(GPS_t* gps, uint32_t current_ms)
 {
     char* string = (char*)(gps->buffer.chars);
@@ -418,3 +445,4 @@ int GPS_Process_GPZDA(GPS_t* gps, uint32_t current_ms)
 
     return result;
 }
+#endif // GPS_GPZDA_ENABLED

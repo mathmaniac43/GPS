@@ -7,6 +7,18 @@
 
 #include "usart.h"
 
+#ifndef GPS_GPGGA_ENABLED
+#define GPS_GPGGA_ENABLED 1
+#endif
+
+#ifndef GPS_GPVTG_ENABLED
+#define GPS_GPVTG_ENABLED 1
+#endif
+
+#ifndef GPS_GPZDA_ENABLED
+#define GPS_GPZDA_ENABLED 1
+#endif
+
 #ifndef GPS_BUFFER_SIZE
 #define GPS_BUFFER_SIZE 512
 #endif
@@ -47,6 +59,8 @@ typedef struct
  * @see http://navspark.mybigcommerce.com/content/NMEA_Format_v0.1.pdf
  * @see http://lefebure.com/articles/nmea-gga/
  */
+#if GPS_GPGGA_ENABLED
+
 typedef struct
 {
     uint32_t    updated_ms; //! Last ticks (in ms) that this was updated
@@ -79,6 +93,8 @@ typedef struct
 
 #define GPS_GPGGA_NUM_FIELDS (16+1)
 
+#endif // GPS_GPGGA_ENABLED
+
 /*!
  * @brief Contains GPS GPVTG data.
  *
@@ -88,6 +104,8 @@ typedef struct
  * @see https://docs.novatel.com/oem7/Content/Logs/GPVTG.htm
  * @see http://navspark.mybigcommerce.com/content/NMEA_Format_v0.1.pdf
  */
+#if GPS_GPVTG_ENABLED
+
 typedef struct
 {
     uint32_t    updated_ms; //! Last ticks (in ms) that this was updated
@@ -111,6 +129,8 @@ typedef struct
 
 #define GPS_GPVTG_NUM_FIELDS (10+1)
 
+#endif // GPS_GPVTG_ENABLED
+
 /*!
  * @brief Contains GPS GPZDA data.
  *
@@ -120,6 +140,8 @@ typedef struct
  * @see https://docs.novatel.com/oem7/Content/Logs/GPZDA.htm
  * @see http://navspark.mybigcommerce.com/content/NMEA_Format_v0.1.pdf
  */
+#if GPS_GPZDA_ENABLED
+
 typedef struct
 {
     uint32_t    updated_ms; //! Last ticks (in ms) that this was updated
@@ -141,6 +163,8 @@ typedef struct
 
 #define GPS_GPZDA_NUM_FIELDS (8+1)
 
+#endif //GPS_GPZDA_ENABLED
+
 /*!
  * @brief Describes latest captured GPS data and buffers upcoming data.
  *
@@ -152,17 +176,23 @@ typedef struct
 {
     GPS_Buffer_t    buffer;
 
+#if GPS_GPGGA_ENABLED
     regex_t         regex_gpgga;
-    regex_t         regex_gpvtg;
-    regex_t         regex_gpzda;
-
     regmatch_t      regmatch_gpgga[GPS_GPGGA_NUM_FIELDS];
-    regmatch_t      regmatch_gpvtg[GPS_GPVTG_NUM_FIELDS];
-    regmatch_t      regmatch_gpzda[GPS_GPVTG_NUM_FIELDS];
-
     GPGGA_t         gpgga;
+#endif // GPS_GPGGA_ENABLED
+
+#if GPS_GPVTG_ENABLED
+    regex_t         regex_gpvtg;
+    regmatch_t      regmatch_gpvtg[GPS_GPVTG_NUM_FIELDS];
     GPVTG_t         gpvtg;
+#endif // GPS_GPVTG_ENABLED
+
+#if GPS_GPZDA_ENABLED
+    regex_t         regex_gpzda;
+    regmatch_t      regmatch_gpzda[GPS_GPVTG_NUM_FIELDS];
     GPZDA_t         gpzda;
+#endif // GPS_GPZDA_ENABLED
 } GPS_t;
 
 /*!
@@ -198,23 +228,72 @@ void GPS_CallBack(  GPS_t* gps, UART_HandleTypeDef* uart);
  *
  * @details
  * Use global regular expressions and string conversions to store data into the
- * @a gps in the GPGGA_t and GPVTG_t structures it contains.
- *
- * @note Not reentrant.
- *
- * @todo Make reentrant
+ * @a gps structures.
  *
  * @param gps   Pointer to the GPS_t that provides the captured data and
  *              will store the converted structs.
+ * @param uart  UART where the character stream comes from, used to ensure
+ *              that the interrupt to get more data is active after processing.
  *
  * @retval void
  */
 void GPS_Process(   GPS_t* gps, UART_HandleTypeDef* uart);
 
+/*!
+ * @brief Process GPGGA data and store in the GPS.
+ *
+ * @details
+ * Parses each CSV field per the specification.
+ *
+ * @see GPS_t
+ *
+ * @param gps   Pointer to the GPS_t that provides the captured data and
+ *              will store the converted structs.
+ * @param current_ms    Current "timestamp" from the processer per the ticks,
+ *                      to mark in the data structure when it was last updated.
+ *
+ * @retval int result from calling regexec().
+ */
+#if GPS_GPGGA_ENABLED
 int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms);
+#endif // GPS_GGA_ENABLED
 
+/*!
+ * @brief Process GPVTG data and store in the GPS.
+ *
+ * @details
+ * Parses each CSV field per the specification.
+ *
+ * @see GPS_t
+ *
+ * @param gps   Pointer to the GPS_t that provides the captured data and
+ *              will store the converted structs.
+ * @param current_ms    Current "timestamp" from the processer per the ticks,
+ *                      to mark in the data structure when it was last updated.
+ *
+ * @retval int result from calling regexec().
+ */
+#if GPS_GPVTG_ENABLED
 int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms);
+#endif // GPS_GPVTG_ENABLED
 
+/*!
+ * @brief Process GPZDA data and store in the GPS.
+ *
+ * @details
+ * Parses each CSV field per the specification.
+ *
+ * @see GPS_t
+ *
+ * @param gps   Pointer to the GPS_t that provides the captured data and
+ *              will store the converted structs.
+ * @param current_ms    Current "timestamp" from the processer per the ticks,
+ *                      to mark in the data structure when it was last updated.
+ *
+ * @retval int result from calling regexec().
+ */
+#if GPS_GPZDA_ENABLED
 int GPS_Process_GPZDA(GPS_t* gps, uint32_t current_ms);
+#endif // GPS_GPZDA_ENABLED
 
 #endif
