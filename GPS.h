@@ -112,6 +112,36 @@ typedef struct
 #define GPS_GPVTG_NUM_FIELDS (10+1)
 
 /*!
+ * @brief Contains GPS GPZDA data.
+ *
+ * @details
+ * This is the Global Positioning System time and date information.
+ *
+ * @see https://docs.novatel.com/oem7/Content/Logs/GPZDA.htm
+ * @see http://navspark.mybigcommerce.com/content/NMEA_Format_v0.1.pdf
+ */
+typedef struct
+{
+    uint32_t    updated_ms; //! Last ticks (in ms) that this was updated
+
+    uint8_t     utc_h;      //! UTC hour
+    uint8_t     utc_m;      //! UTC minute
+    uint8_t     utc_s;      //! UTC second
+    uint16_t    utc_us;     //! UTC microsecond
+
+    uint8_t     utc_day;    //! UTC day
+    uint8_t     utc_month;  //! UTC month
+    uint16_t    utc_year;   //! UTC year
+
+    int8_t      utc_local_hours;    //! UTC local zone hours
+    int8_t      utc_local_minutes;  //! UTC local zone minutes
+
+    char        check[2];   //! Checksum for message
+} GPZDA_t;
+
+#define GPS_GPZDA_NUM_FIELDS (8+1)
+
+/*!
  * @brief Describes latest captured GPS data and buffers upcoming data.
  *
  * @details
@@ -124,12 +154,15 @@ typedef struct
 
     regex_t         regex_gpgga;
     regex_t         regex_gpvtg;
+    regex_t         regex_gpzda;
 
     regmatch_t      regmatch_gpgga[GPS_GPGGA_NUM_FIELDS];
     regmatch_t      regmatch_gpvtg[GPS_GPVTG_NUM_FIELDS];
+    regmatch_t      regmatch_gpzda[GPS_GPVTG_NUM_FIELDS];
 
     GPGGA_t         gpgga;
     GPVTG_t         gpvtg;
+    GPZDA_t         gpzda;
 } GPS_t;
 
 /*!
@@ -181,5 +214,7 @@ void GPS_Process(   GPS_t* gps, UART_HandleTypeDef* uart);
 int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms);
 
 int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms);
+
+int GPS_Process_GPZDA(GPS_t* gps, uint32_t current_ms);
 
 #endif

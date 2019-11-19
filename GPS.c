@@ -48,6 +48,20 @@ const char* GPS_GPVTG_REGEX_STRING =
 ;
 // @formatter:on
 
+// @formatter:off
+const char* GPS_GPZDA_REGEX_STRING =
+    "\\$GPZDA,"                             //     GPS time and date indicator
+        "([[:digit:]]*)\\.?"                //  1) Time hours, minutes, and seconds (combined)
+        "([[:digit:]]*),"                   //  2) Time microseconds
+        "([[:digit:]]{2})?,"                //  3) Time day
+        "([[:digit:]]{2})?,"                //  4) Time month
+        "([[:digit:]]{4})?,"                //  5) Time year
+        "(-?[[:digit:]]{2})?,"              //  6) Time local zone hours
+        "(-?[[:digit:]]{2})?,"              //  7) Time local zone minutes
+        "\\*([[:alnum:]]{2})"               //  8) Checksum
+;
+// @formatter:on
+
 double convertDegMinToDecDeg(float degMin)
 {
     double min = 0.0;
@@ -69,6 +83,7 @@ void GPS_Init(GPS_t* gps, UART_HandleTypeDef* uart)
 
     regcomp(&(gps->regex_gpgga), GPS_GPGGA_REGEX_STRING, REG_EXTENDED);
     regcomp(&(gps->regex_gpvtg), GPS_GPVTG_REGEX_STRING, REG_EXTENDED);
+    regcomp(&(gps->regex_gpzda), GPS_GPZDA_REGEX_STRING, REG_EXTENDED);
 
     HAL_UART_Receive_IT(uart, &(gps->buffer.char_interrupt), 1);
 }
@@ -104,8 +119,11 @@ void GPS_Process(GPS_t* gps, UART_HandleTypeDef* uart)
     { // It has been long enough since an update, and there is data available
         int gpgga_result = GPS_Process_GPGGA(gps, current_ms);
         int gpvtg_result = GPS_Process_GPVTG(gps, current_ms);
+        int gpzda_result = GPS_Process_GPZDA(gps, current_ms);
 
-        if (0 == gpgga_result && 0 == gpvtg_result)
+        if (0 == gpgga_result &&
+            0 == gpvtg_result &&
+            0 == gpzda_result)
         {
             must_clear_buffer = 1;
         }
@@ -325,6 +343,75 @@ int GPS_Process_GPVTG(GPS_t* gps, uint32_t current_ms)
         // 10) Checksum
         end = (char*)&(string[matches[index].rm_eo]);
         memcpy(gpvtg->check, substring, (end - substring));
+        //++index;
+        //substring = (char*)&(string[matches[index].rm_so]);
+    }
+
+    return result;
+}
+
+int GPS_Process_GPZDA(GPS_t* gps, uint32_t current_ms)
+{
+    char* string = (char*)(gps->buffer.chars);
+    int result = regexec(
+        &(gps->regex_gpzda),
+        string,
+        GPS_GPGGA_NUM_FIELDS,
+        gps->regmatch_gpzda,
+        0
+    );
+
+    if (0 == result)
+    { // All captures successful, can parse
+        GPZDA_t* gpzda = &(gps->gpzda);
+        regmatch_t* matches = gps->regmatch_gpzda;
+        gpzda->updated_ms = current_ms;
+
+        size_t index = 1; // index 0 is the entire string!
+        char* substring = (char*)&(string[matches[index].rm_so]);
+        char* end = NULL;
+
+        //  1) Time hours, minutes, and seconds (combined)
+        uint32_t hours_minutes_seconds = atoll(substring);
+        gpzda->utc_h = (hours_minutes_seconds / 10000) % 100;
+        gpzda->utc_m = (hours_minutes_seconds /   100) % 100;
+        gpzda->utc_s = (hours_minutes_seconds /     1) % 100;
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  2) Time microseconds
+        gpzda->utc_us = atol(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  3) Time day
+        gpzda->utc_day = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  4) Time month
+        gpzda->utc_month = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  5) Time year
+        gpzda->utc_year = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  6) Time local zone hours
+        gpzda->utc_local_hours = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  7) Time local zone minutes
+        gpzda->utc_local_minutes = atoi(substring);
+        ++index;
+        substring = (char*)&(string[matches[index].rm_so]);
+
+        //  8) Checksum
+        end = (char*)&(string[matches[index].rm_eo]);
+        memcpy(gpzda->check, substring, (end - substring));
         //++index;
         //substring = (char*)&(string[matches[index].rm_so]);
     }
