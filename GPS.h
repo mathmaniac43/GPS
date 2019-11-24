@@ -74,10 +74,8 @@ typedef struct
     uint8_t     utc_s;      //! UTC second
     uint16_t    utc_us;     //! UTC microsecond
 
-    float       lat;        //! Latitude
-    char        lat_dir;    //! Latitude direction (N/S); null if @a lat invalid
-    float       lon;        //! Longitude
-    char        lon_dir;    //! Longitude direction (E/W); null if @a lon invalid
+    float       lat;        //! Latitude, decimal degrees
+    float       lon;        //! Longitude, decimal degrees
 
     uint8_t     quality;    //! Quality indicator
     uint8_t     num_sats;   //! Number of satellites used
@@ -122,10 +120,8 @@ typedef struct
 
     char        nav_warn;   //! Navigation receiver warning (A=OK, V=warning)
 
-    float       lat;        //! Latitude
-    char        lat_dir;    //! Latitude direction (N/S); null if @a lat invalid
-    float       lon;        //! Longitude
-    char        lon_dir;    //! Longitude direction (E/W); null if @a lon invalid
+    float       lat;        //! Latitude, decimal degrees
+    float       lon;        //! Longitude, decimal degrees
 
     float       speed_kt;   //! Speed over ground, knots
 
@@ -133,7 +129,7 @@ typedef struct
 
     uint8_t     utc_day;    //! UTC day
     uint8_t     utc_mon;    //! UTC month
-    uint8_t     utc_year;   //! UTC year
+    uint16_t    utc_year;   //! UTC year
 
     float       var;        //! Magnetic variation (E subtracts from @a course_t)
     char        var_c;      //! Mag. var. direction (E/W); null if @a var invalid
@@ -285,6 +281,7 @@ void GPS_CallBack(  GPS_t* gps, UART_HandleTypeDef* uart);
  * Use global regular expressions and string conversions to store data into the
  * @a gps structures.
  *
+ * @param current_ms Current milliseconds reported by system, for record purposes.
  * @param gps   Pointer to the GPS_t that provides the captured data and
  *              will store the converted structs.
  * @param uart  UART where the character stream comes from, used to ensure
@@ -292,7 +289,7 @@ void GPS_CallBack(  GPS_t* gps, UART_HandleTypeDef* uart);
  *
  * @retval void
  */
-void GPS_Process(   GPS_t* gps, UART_HandleTypeDef* uart);
+void GPS_Process(uint32_t current_ms, GPS_t* gps, UART_HandleTypeDef* uart);
 
 #if GPS_GPGGA_ENABLED
 /*!

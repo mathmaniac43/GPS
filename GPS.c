@@ -92,19 +92,24 @@ const char* GPS_GPZDA_REGEX_STRING =
 // @formatter:on
 #endif // GPS_GPZDA_ENABLED
 
-double convertDegMinToDecDeg(float degMin)
+double convertDegMinToDecDeg(float deg_min, uint8_t is_negative)
 {
     double min = 0.0;
-    double decDeg = 0.0;
+    double dec_deg = 0.0;
 
     //get the minutes, fmod() requires double
-    min = fmod((double) degMin, 100.0);
+    min = fmod((double) deg_min, 100.0);
 
     //rebuild coordinates in decimal degrees
-    degMin = (int) (degMin / 100);
-    decDeg = degMin + (min / 60);
+    deg_min = (int) (deg_min / 100);
+    dec_deg = deg_min + (min / 60);
 
-    return decDeg;
+    if (is_negative)
+    {
+        dec_deg = -dec_deg;
+    }
+
+    return dec_deg;
 }
 
 void GPS_Init(GPS_t* gps, UART_HandleTypeDef* uart)
@@ -151,9 +156,8 @@ void GPS_CallBack(GPS_t* gps, UART_HandleTypeDef* uart)
     HAL_UART_Receive_IT(uart, &(gps->buffer.char_interrupt), 1);
 }
 
-void GPS_Process(GPS_t* gps, UART_HandleTypeDef* uart)
+void GPS_Process(uint32_t current_ms, GPS_t* gps, UART_HandleTypeDef* uart)
 {
-    uint32_t current_ms = HAL_GetTick();
     uint8_t must_clear_buffer = (gps->buffer.next_index >= GPS_BUFFER_SIZE - 1);
 
     if (current_ms > (gps->buffer.updated_ms + GPS_MS_BEFORE_CHECK) &&
@@ -228,26 +232,20 @@ int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms)
         gpgga->utc_us = atol(substring);
 
         //  3) Latitude (DDMM.MMMMM)
-        substring = (char*)&(string[matches[++index].rm_so]);
-        gpgga->lat = convertDegMinToDecDeg(atoff(substring));
-
         //  4) Latitude N/S
         substring = (char*)&(string[matches[++index].rm_so]);
-        if ('N' == *substring || 'S' == *substring)
-        {
-            gpgga->lat_dir = *substring;
-        }
+        gprmc->lat = convertDegMinToDecDeg(
+            atoff(substring),
+            'S' == (string[matches[++index].rm_so])
+        );
 
         //  5) Longitude (DDDMM.MMMMM)
-        substring = (char*)&(string[matches[++index].rm_so]);
-        gpgga->lon = convertDegMinToDecDeg(atoff(substring));
-
         //  6) Longitude E/W
         substring = (char*)&(string[matches[++index].rm_so]);
-        if ('E' == *substring || 'W' == *substring)
-        {
-            gpgga->lon_dir = *substring;
-        }
+        gprmc->lon = convertDegMinToDecDeg(
+            atoff(substring),
+            'W' == (string[matches[++index].rm_so])
+        );
 
         //  7) Quality indicator
         substring = (char*)&(string[matches[++index].rm_so]);
@@ -343,26 +341,20 @@ int GPS_Process_GPRMC(GPS_t* gps, uint32_t current_ms)
         }
 
         //  4) Latitude (DDMM.MMMMM)
-        substring = (char*)&(string[matches[++index].rm_so]);
-        gprmc->lat = convertDegMinToDecDeg(atoff(substring));
-
         //  5) Latitude N/S
         substring = (char*)&(string[matches[++index].rm_so]);
-        if ('N' == *substring || 'S' == *substring)
-        {
-            gprmc->lat_dir = *substring;
-        }
+        gprmc->lat = convertDegMinToDecDeg(
+            atoff(substring),
+            'S' == (string[matches[++index].rm_so])
+        );
 
         //  6) Longitude (DDDMM.MMMMM)
-        substring = (char*)&(string[matches[++index].rm_so]);
-        gprmc->lon = convertDegMinToDecDeg(atoff(substring));
-
         //  7) Longitude E/W
         substring = (char*)&(string[matches[++index].rm_so]);
-        if ('E' == *substring || 'W' == *substring)
-        {
-            gprmc->lon_dir = *substring;
-        }
+        gprmc->lon = convertDegMinToDecDeg(
+            atoff(substring),
+            'W' == (string[matches[++index].rm_so])
+        );
 
         //  8) Speed over ground (knots)
         substring = (char*)&(string[matches[++index].rm_so]);
@@ -377,7 +369,7 @@ int GPS_Process_GPRMC(GPS_t* gps, uint32_t current_ms)
         uint32_t day_mon_year = atoll(substring);
         gprmc->utc_day  = (day_mon_year / 10000) % 100;
         gprmc->utc_mon  = (day_mon_year /   100) % 100;
-        gprmc->utc_year = (day_mon_year /     1) % 100;
+        gprmc->utc_year = (day_mon_year /     1) % 100 + 2000;
 
         // 11) Magnetic variation degrees
         substring = (char*)&(string[matches[++index].rm_so]);
