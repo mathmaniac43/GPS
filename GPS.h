@@ -120,7 +120,9 @@ typedef struct
 
     char        nav_warn;   //! Navigation receiver warning (A=OK, V=warning)
 
+    uint8_t     lat_valid;  //! 1 if @a lat valid, 0 otherwise
     float       lat;        //! Latitude, decimal degrees
+    uint8_t     lon_valid;  //! 1 if @a lon valid, 0 otherwise
     float       lon;        //! Longitude, decimal degrees
 
     float       speed_kt;   //! Speed over ground, knots

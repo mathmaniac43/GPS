@@ -234,6 +234,7 @@ int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms)
         //  3) Latitude (DDMM.MMMMM)
         //  4) Latitude N/S
         substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->lat_valid = (matches[index].rm_eo > matches[index].rm_so);
         gprmc->lat = convertDegMinToDecDeg(
             atoff(substring),
             'S' == (string[matches[++index].rm_so])
@@ -242,6 +243,7 @@ int GPS_Process_GPGGA(GPS_t* gps, uint32_t current_ms)
         //  5) Longitude (DDDMM.MMMMM)
         //  6) Longitude E/W
         substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->lon_valid = (matches[index].rm_eo > matches[index].rm_so);
         gprmc->lon = convertDegMinToDecDeg(
             atoff(substring),
             'W' == (string[matches[++index].rm_so])
@@ -343,6 +345,7 @@ int GPS_Process_GPRMC(GPS_t* gps, uint32_t current_ms)
         //  4) Latitude (DDMM.MMMMM)
         //  5) Latitude N/S
         substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->lat_valid = (matches[index].rm_eo > matches[index].rm_so);
         gprmc->lat = convertDegMinToDecDeg(
             atoff(substring),
             'S' == (string[matches[++index].rm_so])
@@ -351,6 +354,7 @@ int GPS_Process_GPRMC(GPS_t* gps, uint32_t current_ms)
         //  6) Longitude (DDDMM.MMMMM)
         //  7) Longitude E/W
         substring = (char*)&(string[matches[++index].rm_so]);
+        gprmc->lon_valid = (matches[index].rm_eo > matches[index].rm_so);
         gprmc->lon = convertDegMinToDecDeg(
             atoff(substring),
             'W' == (string[matches[++index].rm_so])
