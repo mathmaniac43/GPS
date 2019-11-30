@@ -160,9 +160,8 @@ void GPS_Process(uint32_t current_ms, GPS_t* gps, UART_HandleTypeDef* uart)
 {
     uint8_t must_clear_buffer = (gps->buffer.next_index >= GPS_BUFFER_SIZE - 1);
 
-    if (current_ms > (gps->buffer.updated_ms + GPS_MS_BEFORE_CHECK) &&
-        gps->buffer.next_index > 0)
-    { // It has been long enough since an update, and there is data available
+    if (gps->buffer.next_index > 0)
+    { // There is data available
         int result_bool = 0; // nonzero if something failed
 
 #if GPS_GPGGA_ENABLED
